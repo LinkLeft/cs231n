@@ -1,3 +1,10 @@
 # 提交时忽略 CIFAR-10 数据集文件
 assignments/a1/cifar-10-python.tar.gz
 assignments/a2/cifar-10-python.tar.gz
+assignments/A3/cifar-10-python.tar.gz
+
+# 提交时忽略 PPT 文件夹
+PPT
+
+# 提交时忽略笔记
+note

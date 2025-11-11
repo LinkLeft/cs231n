@@ -147,7 +147,9 @@ def nn_forward_pass(params: Dict[str, torch.Tensor], X: torch.Tensor):
     # shape (N, C).                                                            #
     ############################################################################
     # Replace "pass" statement with your code
-    pass
+    Y = X.mm(W1) + b1
+    hidden = torch.where(Y >= 0, Y, 0.0) # relu
+    scores = hidden.mm(W2) + b2
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -212,7 +214,19 @@ def nn_forward_backward(
     # (Check Numeric Stability in http://cs231n.github.io/linear-classify/).   #
     ############################################################################
     # Replace "pass" statement with your code
-    pass
+    # 这里的第二层其实就是个softmax分类器，需要用softmax损失
+    scores_max = scores.max(dim=1, keepdim=True).values # (N, 1)
+    scores_stable = scores - scores_max # (N, C)
+    scores_exp = scores_stable.exp() # (N, C)
+    exp_sum = scores_exp.sum(dim=1, keepdim=True) # (N, 1)
+    p = scores_exp / exp_sum # (N, C)
+
+    p_corr = p[range(N), y] # (N,)
+
+    loss = -p_corr.log().sum() / N
+
+    # 添加正则项
+    loss += reg * (torch.sum(W1**2) + torch.sum(W2**2))
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -226,7 +240,25 @@ def nn_forward_backward(
     # tensor of same size                                                     #
     ###########################################################################
     # Replace "pass" statement with your code
-    pass
+    y_one_hot = torch.zeros_like(p)
+    y_one_hot.scatter_(1, y.unsqueeze(1), 1) # (N, C) scatter_ 原地填充
+
+    dscores = (p - y_one_hot) / N
+    dW2 = h1.T @ dscores + 2 * reg * W2
+    db2 = dscores.sum(0)
+    dh1 = dscores @ W2.T
+
+    Y = X.mm(W1) + b1
+    mask = (Y>0).float()
+
+    dY = dh1 * mask
+    dW1 = X.T @ dY + 2 * reg * W1
+    db1 = dY.sum(0)
+
+    grads['W1'] = dW1
+    grads['b1'] = db1
+    grads['W2'] = dW2
+    grads['b2'] = db2
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -307,7 +339,10 @@ def nn_train(
         # stored in the grads dictionary defined above.                         #
         #########################################################################
         # Replace "pass" statement with your code
-        pass
+        params['W1'] -= learning_rate * grads['W1']
+        params['W2'] -= learning_rate * grads['W2']
+        params['b1'] -= learning_rate * grads['b1']
+        params['b2'] -= learning_rate * grads['b2']
         #########################################################################
         #                             END OF YOUR CODE                          #
         #########################################################################
@@ -365,7 +400,8 @@ def nn_predict(
     # TODO: Implement this function; it should be VERY simple!                #
     ###########################################################################
     # Replace "pass" statement with your code
-    pass
+    scores = loss_func(params, X)
+    y_pred = scores.argmax(1)
     ###########################################################################
     #                              END OF YOUR CODE                           #
     ###########################################################################
@@ -388,10 +424,11 @@ def nn_get_search_params():
     - learning_rate_decays: learning rate decay candidates
                                 e.g. [1.0, 0.95, ...]
     """
-    learning_rates = []
-    hidden_sizes = []
-    regularization_strengths = []
-    learning_rate_decays = []
+    learning_rates = [1.0, 2.0]
+    hidden_sizes = [256, 512]
+    regularization_strengths = [1e-5, 1e-4]
+    learning_rate_decays = [0.95]
+    number_of_training_epochs = [3000]
     ###########################################################################
     # TODO: Add your own hyper parameter lists. This should be similar to the #
     # hyperparameters that you used for the SVM, but you may need to select   #
@@ -409,6 +446,7 @@ def nn_get_search_params():
         hidden_sizes,
         regularization_strengths,
         learning_rate_decays,
+        number_of_training_epochs
     )
 
 
@@ -460,7 +498,26 @@ def find_best_net(
     # automatically like we did on the previous exercises.                      #
     #############################################################################
     # Replace "pass" statement with your code
-    pass
+    for lr in get_param_set_fn()[0]:
+        for hs in get_param_set_fn()[1]:
+            for reg in get_param_set_fn()[2]:
+                for decay in get_param_set_fn()[3]:
+                    for epochs in get_param_set_fn()[4]:
+                        net = TwoLayerNet(3 * 32 * 32, hs, 10, device=data_dict['X_train'].device, dtype=data_dict['X_train'].dtype)
+                        stats = net.train(data_dict['X_train'], data_dict['y_train'],
+                                data_dict['X_val'], data_dict['y_val'],
+                                num_iters=epochs, batch_size=1000,
+                                learning_rate=lr, learning_rate_decay=decay,
+                                reg=reg, verbose=True)
+                        # Predict on the validation set
+                        y_val_pred = net.predict(data_dict['X_val'])
+                        val_acc = 100.0 * (y_val_pred == data_dict['y_val']).double().mean().item()
+
+                        if val_acc > best_val_acc:
+                            best_net = net
+                            best_stat = stats
+                            best_val_acc = val_acc
+                            
     #############################################################################
     #                               END OF YOUR CODE                            #
     #############################################################################
