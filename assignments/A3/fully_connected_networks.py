@@ -39,7 +39,12 @@ class Linear(object):
         # You will need to reshape the input into rows.                      #
         ######################################################################
         # Replace "pass" statement with your code
-        pass
+        N = x.shape[0]
+        D = x.numel() // N
+
+        x_flat = x.view(N, D)
+
+        out = x_flat @ w + b
         ######################################################################
         #                        END OF YOUR CODE                            #
         ######################################################################
@@ -68,7 +73,16 @@ class Linear(object):
         # TODO: Implement the linear backward pass.      #
         ##################################################
         # Replace "pass" statement with your code
-        pass
+        N = x.shape[0]
+        D = x.numel() // N
+        x_flat = x.view(N, D)
+
+        dx_flat = dout @ w.T
+        dx = torch.reshape(dx_flat, x.shape)
+
+        dw = x_flat.T @ dout
+
+        db = dout.sum(dim=0)
         ##################################################
         #                END OF YOUR CODE                #
         ##################################################
@@ -95,7 +109,7 @@ class ReLU(object):
         # in-place operation.                             #
         ###################################################
         # Replace "pass" statement with your code
-        pass
+        out = torch.where(x >= 0, x, 0.0)
         ###################################################
         #                 END OF YOUR CODE                #
         ###################################################
@@ -120,7 +134,8 @@ class ReLU(object):
         # in-place operation.                               #
         #####################################################
         # Replace "pass" statement with your code
-        pass
+        mask = (x > 0).double()
+        dx = dout * mask
         #####################################################
         #                  END OF YOUR CODE                 #
         #####################################################
@@ -202,7 +217,10 @@ class TwoLayerNet(object):
         # weights and biases using the keys 'W2' and 'b2'.                #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        self.params['W1'] = weight_scale * torch.randn(input_dim, hidden_dim, dtype=dtype, device=device)
+        self.params['b1'] = torch.zeros(hidden_dim, dtype=dtype, device=device)
+        self.params['W2'] = weight_scale * torch.randn(hidden_dim, num_classes, dtype=dtype, device=device)
+        self.params['b2'] = torch.zeros(num_classes, dtype=dtype, device=device)
         ###############################################################
         #                            END OF YOUR CODE                 #
         ###############################################################
@@ -253,7 +271,12 @@ class TwoLayerNet(object):
         # scores variable.                                          #
         #############################################################
         # Replace "pass" statement with your code
-        pass
+        W1, b1 = self.params['W1'], self.params['b1']
+        W2, b2 = self.params['W2'], self.params['b2']
+        
+        Y = X.mm(W1) + b1
+        h1 = torch.where(Y >= 0, Y, 0.0) # relu
+        scores = h1.mm(W2) + b2
         ##############################################################
         #                     END OF YOUR CODE                       #
         ##############################################################
@@ -275,7 +298,43 @@ class TwoLayerNet(object):
         # regularization does not include a factor of 0.5.                #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        N = X.shape[0]
+
+        # 计算loss
+        # 这里的第二层其实就是个softmax分类器，需要用softmax损失
+        scores_max = scores.max(dim=1, keepdim=True).values # (N, 1)
+        scores_stable = scores - scores_max # (N, C)
+        scores_exp = scores_stable.exp() # (N, C)
+        exp_sum = scores_exp.sum(dim=1, keepdim=True) # (N, 1)
+        p = scores_exp / exp_sum # (N, C)
+
+        p_corr = p[range(N), y] # (N,)
+
+        loss = -p_corr.log().sum() / N
+
+        # 添加正则项
+        loss += self.reg * (torch.sum(W1**2) + torch.sum(W2**2))
+
+        # 计算grads
+        y_one_hot = torch.zeros_like(p)
+        y = y.to(X.device)
+        y_one_hot.scatter_(1, y.unsqueeze(1), 1) # 原地填充
+        
+        dscores = (p - y_one_hot) / N
+        dW2 = h1.T @ dscores + 2 * self.reg * W2
+        db2 = dscores.sum(dim=0)
+        dh1 = dscores @ W2.T
+
+        mask = (Y > 0).double()
+        dY = dh1 * mask
+
+        dW1 = X.T @ dY + 2 * self.reg * W1
+        db1 = dY.sum(dim=0)
+
+        grads['W1'] = dW1
+        grads['b1'] = db1
+        grads['W2'] = dW2
+        grads['b2'] = db2
         ###################################################################
         #                     END OF YOUR CODE                            #
         ###################################################################
@@ -337,7 +396,15 @@ class FullyConnectedNet(object):
         # should be initialized to zero.                                      #
         #######################################################################
         # Replace "pass" statement with your code
-        pass
+        # 定义所有层的输入/输出维度
+        layer_dims = [input_dim] + hidden_dims + [num_classes]
+
+        for i in range(1, self.num_layers + 1):
+            in_dim = layer_dims[i-1]
+            out_dim = layer_dims[i]
+
+            self.params[f'W{i}'] = weight_scale * torch.randn(in_dim, out_dim, dtype=dtype, device=device)
+            self.params[f'b{i}'] = torch.zeros(in_dim, out_dim, dtype=dtype, device=device)
         #######################################################################
         #                         END OF YOUR CODE                            #
         #######################################################################
@@ -401,7 +468,30 @@ class FullyConnectedNet(object):
         # to each dropout forward pass.                                  #
         ##################################################################
         # Replace "pass" statement with your code
-        pass
+        current_input = X
+        self.cache = {}
+
+        for i in range(1, self.num_layers + 1):
+            W = self.params[f'W{i}']
+            b = self.params[f'b{i}']
+
+            Y = current_input @ W + b
+
+            self.cache[f'Y{i}'] = Y
+            self.cache[f'input_{i}'] = current_input
+
+            # n-1层隐层进行非线性变换
+            if i < self.num_layers:
+                relu_mask = (Y > 0).to(self.dtype)
+                h = Y * relu_mask
+
+                self.cache[f'relu_mask_{i}'] = relu_mask
+                self.cache[f'h{i}'] = h
+
+                # dropout
+                if self.use_dropout:
+                    
+                    
         #################################################################
         #                      END OF YOUR CODE                         #
         #################################################################
@@ -439,7 +529,17 @@ def create_solver_instance(data_dict, dtype, device):
     #############################################################
     solver = None
     # Replace "pass" statement with your code
-    pass
+    solver = Solver(
+        model=model,
+        data=data_dict,
+        device=device,
+        optim_config={
+            'learning_rate': 1e-1
+        },
+        lr_decay=0.95,
+        batch_size=100,
+        num_epochs=20
+    )
     ##############################################################
     #                    END OF YOUR CODE                        #
     ##############################################################
