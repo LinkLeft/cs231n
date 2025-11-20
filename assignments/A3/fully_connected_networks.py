@@ -403,8 +403,12 @@ class FullyConnectedNet(object):
             in_dim = layer_dims[i-1]
             out_dim = layer_dims[i]
 
+            # 固定seed以确定参数初始化可复现
+            if seed is not None:
+                torch.manual_seed(seed)
+
             self.params[f'W{i}'] = weight_scale * torch.randn(in_dim, out_dim, dtype=dtype, device=device)
-            self.params[f'b{i}'] = torch.zeros(in_dim, out_dim, dtype=dtype, device=device)
+            self.params[f'b{i}'] = torch.zeros(out_dim, dtype=dtype, device=device)
         #######################################################################
         #                         END OF YOUR CODE                            #
         #######################################################################
@@ -470,6 +474,7 @@ class FullyConnectedNet(object):
         # Replace "pass" statement with your code
         current_input = X
         self.cache = {}
+        keep_prob = 1
 
         for i in range(1, self.num_layers + 1):
             W = self.params[f'W{i}']
@@ -489,9 +494,27 @@ class FullyConnectedNet(object):
                 self.cache[f'h{i}'] = h
 
                 # dropout
-                if self.use_dropout:
-                    
-                    
+                if self.use_dropout and mode == 'train':
+                    if self.dropout_param['seed'] is not None:
+                        torch.manual_seed(self.dropout_param['seed'] + i)
+
+                    keep_prob = 1 - self.dropout_param['p']
+                    dropout_mask = torch.bernoulli(torch.full_like(h, keep_prob))
+                    dropped_out = h * dropout_mask
+
+                    dropped_out /= keep_prob
+
+                    self.cache[f'dropout_mask_{i}'] = dropout_mask
+                    self.cache[f'dropped_out_{i}'] = dropped_out
+
+                    current_input = dropped_out
+                else:
+                    current_input = h
+            # 输出层仅线性变换，无激活和dropout
+            else:
+                current_input = Y
+
+        scores = current_input
         #################################################################
         #                      END OF YOUR CODE                         #
         #################################################################
@@ -513,7 +536,69 @@ class FullyConnectedNet(object):
         # the gradient.                                                     #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        # 计算loss
+        N = X.shape[0]
+
+        scores_max = scores.max(dim=1, keepdim=True).values
+        scores_stable = scores - scores_max
+        scores_exp = scores_stable.exp()
+
+        exp_sum = scores_exp.sum(dim=1, keepdim=True)
+        p = scores_exp / exp_sum
+        p_corr = p[range(N), y]
+
+        loss = -p_corr.log().sum() / N
+        
+        for i in range(1, self.num_layers + 1):
+            Wi = self.params[f'W{i}']
+            loss += 0.5 * self.reg * torch.sum(Wi ** 2)
+
+        # 计算grad
+        # 计算softmax层grad
+        y_one_hot = torch.zeros_like(p)
+        y_one_hot.scatter_(1, y.unsqueeze(1), 1)
+
+        dscores = (p - y_one_hot) / N
+
+        dcurrent_output = dscores
+        
+        # if self.use_dropout:
+        #     current_input = self.cache[f'dropped_out_{current_idx - 1}']
+        # else:
+        #     current_input = self.cache[f'h{current_idx - 1}']
+
+        # current_W = self.params[f'W{current_idx}']
+        # dW = current_input.T @ dcurrent_output + 2 * self.reg * current_W
+        # db = dcurrent_output.sum(0)
+
+        # grads[f'W{current_idx}'] = dW
+        # grads[f'b{current_idx}'] = db
+
+        # 计算前n-1层grad
+        for i in range(self.num_layers, 0, -1):
+            if i == 1:
+                current_input = X
+            elif self.use_dropout:
+                current_input = self.cache[f'dropped_out_{i - 1}']
+            else:
+                current_input = self.cache[f'h{i - 1}']
+
+            W = self.params[f'W{i}']
+            b = self.params[f'b{i}']
+
+            dW = current_input.T @ dcurrent_output + self.reg * W
+            db = dcurrent_output.sum(dim=0)
+
+            grads[f'W{i}'] = dW
+            grads[f'b{i}'] = db
+
+            if i > 1:
+                # 计算上一层输出的梯度
+                dcurrent_output = dcurrent_output @ W.T
+                if self.use_dropout:
+                    dcurrent_output *= self.cache[f'dropout_mask_{i - 1}'] / keep_prob
+                else:
+                    dcurrent_output *= self.cache[f'relu_mask_{i - 1}']
         ###########################################################
         #                   END OF YOUR CODE                      #
         ###########################################################
