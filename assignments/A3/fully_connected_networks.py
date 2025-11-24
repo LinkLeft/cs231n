@@ -495,7 +495,7 @@ class FullyConnectedNet(object):
 
                 # dropout
                 if self.use_dropout and mode == 'train':
-                    if self.dropout_param['seed'] is not None:
+                    if self.dropout_param.get('seed') is not None:
                         torch.manual_seed(self.dropout_param['seed'] + i)
 
                     keep_prob = 1 - self.dropout_param['p']
@@ -595,10 +595,12 @@ class FullyConnectedNet(object):
             if i > 1:
                 # 计算上一层输出的梯度
                 dcurrent_output = dcurrent_output @ W.T
+
                 if self.use_dropout:
+                    keep_prob = 1 - self.dropout_param['p']
                     dcurrent_output *= self.cache[f'dropout_mask_{i - 1}'] / keep_prob
-                else:
-                    dcurrent_output *= self.cache[f'relu_mask_{i - 1}']
+                    
+                dcurrent_output *= self.cache[f'relu_mask_{i - 1}']
         ###########################################################
         #                   END OF YOUR CODE                      #
         ###########################################################
@@ -639,7 +641,8 @@ def get_three_layer_network_params():
     weight_scale = 1e-2   # Experiment with this!
     learning_rate = 1e-4  # Experiment with this!
     # Replace "pass" statement with your code
-    pass
+    weight_scale = 824e-4
+    learning_rate = 17e-2
     ################################################################
     #                             END OF YOUR CODE                 #
     ################################################################
@@ -654,7 +657,8 @@ def get_five_layer_network_params():
     learning_rate = 2e-3  # Experiment with this!
     weight_scale = 1e-5   # Experiment with this!
     # Replace "pass" statement with your code
-    pass
+    weight_scale = 829e-4
+    learning_rate = 254e-3
     ################################################################
     #                       END OF YOUR CODE                       #
     ################################################################
@@ -698,7 +702,9 @@ def sgd_momentum(w, dw, config=None):
     # update the velocity v.                                         #
     ##################################################################
     # Replace "pass" statement with your code
-    pass
+    v = config['momentum'] * v - config['learning_rate'] * dw
+    w += v
+    next_w = w
     ###################################################################
     #                           END OF YOUR CODE                      #
     ###################################################################
@@ -732,7 +738,9 @@ def rmsprop(w, dw, config=None):
     # config['cache'].                                                        #
     ###########################################################################
     # Replace "pass" statement with your code
-    pass
+    config['cache'] = config['decay_rate'] * config['cache'] + (1 - config['decay_rate']) * dw * dw
+    w -= config['learning_rate'] * dw / (config['cache'].sqrt() + config['epsilon'])
+    next_w = w
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -773,7 +781,19 @@ def adam(w, dw, config=None):
     # using it in any calculations.                                          #
     ##########################################################################
     # Replace "pass" statement with your code
-    pass
+    beta1 = config['beta1']
+    beta2 = config['beta2']
+
+    config['t'] += 1
+    
+    config['m'] = beta1 * config['m'] + (1 - beta1) * dw
+    config['v'] = beta2 * config['v'] + (1 - beta2) * dw * dw
+    
+    m_hat = config['m'] / (1 - beta1 ** config['t'])
+    v_hat = config['v'] / (1 - beta2 ** config['t'])
+
+    w -= config['learning_rate'] * m_hat / (v_hat.sqrt() + config['epsilon'])
+    next_w = w
     #########################################################################
     #                              END OF YOUR CODE                         #
     #########################################################################
@@ -826,7 +846,9 @@ class Dropout(object):
             # Store the dropout mask in the mask variable.               #
             ##############################################################
             # Replace "pass" statement with your code
-            pass
+            keep_prob = 1 - p
+            mask = (torch.rand_like(x) > p).to(x.dtype)
+            out = (x * mask) / keep_prob
             ##############################################################
             #                   END OF YOUR CODE                         #
             ##############################################################
@@ -836,7 +858,7 @@ class Dropout(object):
             # inverted dropout.                                          #
             ##############################################################
             # Replace "pass" statement with your code
-            pass
+            out = x
             ##############################################################
             #                      END OF YOUR CODE                      #
             ##############################################################
@@ -863,7 +885,9 @@ class Dropout(object):
             # inverted dropout                                        #
             ###########################################################
             # Replace "pass" statement with your code
-            pass
+            p = dropout_param['p']
+            keep_prob = 1 - p
+            dx = dout * mask / keep_prob
             ###########################################################
             #                     END OF YOUR CODE                    #
             ###########################################################
