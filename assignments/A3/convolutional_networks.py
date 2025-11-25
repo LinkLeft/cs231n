@@ -530,7 +530,52 @@ class DeepConvNet(object):
         # initilized to ones and zeros respectively.                        #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        filter_size = 3
+
+        # 初始化宏层参数
+        for i in range(self.num_layers - 1):
+            conv_W_key = f'W{i+1}'
+            conv_b_key = f'b{i+1}'
+
+            if i == 0:
+                in_channels = input_dims[0]
+            else:
+                in_channels = num_filters[i-1]
+            out_channels = num_filters[i]              
+
+            conv_W = weight_scale * torch.randn((out_channels, in_channels, filter_size, filter_size), device=device, dtype=self.dtype)
+            conv_b = torch.zeros(num_filters[i], device=device, dtype=self.dtype)
+
+            self.params[conv_W_key] = conv_W
+            self.params[conv_b_key] = conv_b
+
+            if batchnorm:
+                gamma_key = f'gamma{i+1}'
+                beta_key = f'beta{i+1}'
+                
+                gamma = torch.ones(1, device=device, dtype=self.dtype)
+                beta = torch.zeros(1, device=device, dtype=self.dtype)
+
+                self.params[gamma_key] = gamma
+                self.params[beta_key] = beta
+
+        # 初始化softmax层参数
+        H, W = input_dims[1], input_dims[2]
+        for i in range(self.num_layers - 1):
+            if i in self.max_pools:
+                H = H // 2
+                W = W // 2
+
+        in_features = num_filters[-1] * H * W
+        
+        lin_W_key = f'W{self.num_layers}'
+        lin_b_key = f'b{self.num_layers}'
+
+        lin_W = weight_scale * torch.randn((in_features, num_classes), device=device, dtype=self.dtype)
+        lin_b = torch.zeros(num_classes, device=device, dtype=self.dtype)
+
+        self.params[lin_W_key] = lin_W
+        self.params[lin_b_key] = lin_b
         ################################################################
         #                      END OF YOUR CODE                        #
         ################################################################
@@ -637,7 +682,7 @@ class DeepConvNet(object):
         # layers, to simplify your implementation.              #
         #########################################################
         # Replace "pass" statement with your code
-        pass
+        
         #####################################################
         #                 END OF YOUR CODE                  #
         #####################################################
