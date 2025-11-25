@@ -405,7 +405,48 @@ class ThreeLayerConvNet(object):
         # does not include a factor of 0.5                                 #
         ####################################################################
         # Replace "pass" statement with your code
-        pass
+        # softmax loss
+        scores_max = scores.max(dim=1, keepdim=True).values
+        scores_stable = scores - scores_max
+        scores_exp = scores_stable.exp()
+        exp_sum = scores_exp.sum(dim=1, keepdim=True)
+        p = scores_exp / exp_sum
+
+        p_corr = p[range(N), y]
+
+        loss = -p_corr.log().sum() / N
+        
+        # 添加正则项
+        loss += self.reg * (torch.sum(W1 ** 2) + torch.sum(W2 ** 2) + torch.sum(W3 ** 2))
+        
+        # 计算grads
+        y_one_hot = torch.zeros_like(p)
+        y = y.to(X.device).long()
+        y_one_hot.scatter_(1, y.unsqueeze(1), 1) # 原地填充
+        
+        dscores = (p - y_one_hot) / N
+        dW3 = relu_out.T @ dscores + 2 * self.reg * W3
+        db3 = dscores.sum(dim=0)
+        drelu_out = dscores @ W3.T
+
+        mask = (lin_out > 0).to(self.dtype)
+        dlin_out = drelu_out * mask
+
+        dW2 = pool_out_flat.T @ dlin_out + 2 * self.reg * W2
+        db2 = dlin_out.sum(dim=0)
+
+        dpool_out_flat = dlin_out @ W2.T
+        dpool_out = dpool_out_flat.reshape(pool_out.shape)
+
+        _, dW1, db1 = Conv_ReLU_Pool.backward(dpool_out, pool_cache)
+        dW1 += 2 * self.reg * W1
+
+        grads['W1'] = dW1
+        grads['b1'] = db1
+        grads['W2'] = dW2
+        grads['b2'] = db2
+        grads['W3'] = dW3
+        grads['b3'] = db3
         ###################################################################
         #                             END OF YOUR CODE                    #
         ###################################################################
