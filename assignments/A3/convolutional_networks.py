@@ -309,7 +309,23 @@ class ThreeLayerConvNet(object):
         # look at the start of the loss() function to see how that happens.  #
         ######################################################################
         # Replace "pass" statement with your code
-        pass
+        C, H, W = input_dims
+        W1 = weight_scale * torch.randn((num_filters, C, filter_size, filter_size), device=device, dtype=dtype)
+        b1 = torch.zeros(num_filters, device=device, dtype=dtype)
+
+        D = num_filters * H * W // 4
+        W2 = weight_scale * torch.randn((D, hidden_dim), device=device, dtype=dtype)
+        b2 = torch.zeros(hidden_dim, device=device, dtype=dtype)
+
+        W3 = weight_scale * torch.randn((hidden_dim, num_classes), device=device, dtype=dtype)
+        b3 = torch.zeros(num_classes, device=device, dtype=dtype)
+
+        self.params['W1'] = W1
+        self.params['b1'] = b1
+        self.params['W2'] = W2
+        self.params['b2'] = b2
+        self.params['W3'] = W3
+        self.params['b3'] = b3
         ######################################################################
         #                            END OF YOUR CODE                        #
         ######################################################################
@@ -358,7 +374,17 @@ class ThreeLayerConvNet(object):
         # above                                                              #
         ######################################################################
         # Replace "pass" statement with your code
-        pass
+        N = X.shape[0]
+
+        pool_out, pool_cache = Conv_ReLU_Pool.forward(X, W1, b1, conv_param, pool_param)
+
+        pool_out_flat = pool_out.reshape(N, -1)
+        lin_out = pool_out_flat @ W2 + b2
+
+        relu_out = torch.where(lin_out >= 0, lin_out, 0.0)
+        relu_out = relu_out.to(self.dtype)
+
+        scores = relu_out @ W3 + b3
         ######################################################################
         #                             END OF YOUR CODE                       #
         ######################################################################
