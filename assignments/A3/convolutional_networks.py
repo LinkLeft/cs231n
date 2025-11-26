@@ -682,7 +682,43 @@ class DeepConvNet(object):
         # layers, to simplify your implementation.              #
         #########################################################
         # Replace "pass" statement with your code
-        
+        input = X
+        caches = {}
+        # 计算宏层输出
+        for i in range(self.num_layers-1):
+            W = self.params[f'W{i+1}']
+            b = self.params[f'b{i+1}']
+
+            if self.batchnorm:
+                gamma = self.params[f'gamma{i+1}']
+                beta = self.params[f'beta{i+1}']
+                if i in self.max_pools:
+                    out, cache = Conv_BatchNorm_ReLU_Pool.forward(
+                        input, W, b, gamma, beta, conv_param, bn_param, pool_param
+                    )
+                else:
+                    out, cache = Conv_BatchNorm_ReLU.forward(
+                        input, W, b, gamma, beta, conv_param, bn_param
+                    )
+            else:
+                if i in self.max_pools:
+                    out, cache = Conv_ReLU_Pool.forward(
+                        input, W, b, conv_param, pool_param
+                    )
+                else:
+                    out, cache = Conv_ReLU.forward(
+                        input, W, b, conv_param
+                    )
+
+            caches[f'{i+1}'] = cache
+            input = out
+        input_final = input
+        input_flat = input_final.reshape(X.shape[0], -1)
+        # 计算softmax层输出
+        W = self.params[f'W{self.num_layers}']
+        b = self.params[f'b{self.num_layers}']
+
+        scores = input_flat @ W + b
         #####################################################
         #                 END OF YOUR CODE                  #
         #####################################################
@@ -703,7 +739,62 @@ class DeepConvNet(object):
         # does not include a factor of 0.5                                #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        N = X.shape[0]
+        
+        # 计算loss
+        scores_max = scores.max(dim=1, keepdim=True).values
+        scores_stable = scores - scores_max
+        scores_exp = scores_stable.exp()
+        exp_sum = scores_exp.sum(dim=1, keepdim=True)
+        p = scores_exp / exp_sum
+
+        p_corr = p[range(N), y]
+
+        loss = -p_corr.log().sum() / N
+
+        for i in range(self.num_layers):
+            W = self.params[f'W{i+1}']
+            loss += self.reg * torch.sum(W ** 2)
+
+        # 计算grads
+        y_one_hot = torch.zeros_like(p)
+        y = y.to(X.device).long()
+        y_one_hot.scatter_(1, y.unsqueeze(1), 1) # 原地填充
+        
+        dscores = (p - y_one_hot) / N
+        
+        # 计算softmax层梯度
+        W = self.params[f'W{self.num_layers}']
+        dW = input_flat.T @ dscores + 2 * self.reg * W
+        db = dscores.sum(dim=0)
+
+        grads[f'W{self.num_layers}'] = dW
+        grads[f'b{self.num_layers}'] = db
+
+        dout = dscores @ W.T
+        dout = dout.reshape(input_final.shape)
+        for i in range(self.num_layers-1, 0, -1):
+            cache = caches[f'{i}']
+            W = self.params[f'W{i}']
+
+            if self.batchnorm:
+                if (i-1) in self.max_pools:
+                    dout, dW, db, dgamma, dbeta = Conv_BatchNorm_ReLU_Pool.backward(dout, cache)
+                else:
+                    dout, dW, db, dgamma, dbeta = Conv_BatchNorm_ReLU.backward(dout, cache)
+                
+                grads[f'W{i}'] = dW + 2 * self.reg * W
+                grads[f'b{i}'] = db
+                grads[f'gamma{i}'] = dgamma
+                grads[f'beta{i}'] = dbeta
+            else:
+                if (i-1) in self.max_pools:
+                    dout, dW, db = Conv_ReLU_Pool.backward(dout, cache)
+                else:
+                    dout, dW, db = Conv_ReLU.backward(dout, cache)
+
+                grads[f'W{i}'] = dW + 2 * self.reg * W
+                grads[f'b{i}'] = db
         #############################################################
         #                       END OF YOUR CODE                    #
         #############################################################
@@ -719,7 +810,8 @@ def find_overfit_parameters():
     # model achieves 100% training accuracy within 30 epochs. #
     ###########################################################
     # Replace "pass" statement with your code
-    pass
+    weight_scale = 8e-2
+    learning_rate = 94e-4
     ###########################################################
     #                       END OF YOUR CODE                  #
     ###########################################################
