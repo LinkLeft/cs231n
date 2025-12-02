@@ -531,55 +531,59 @@ class DeepConvNet(object):
         #####################################################################
         # Replace "pass" statement with your code
         filter_size = 3
+        weight_initializer = kaiming_initializer
 
         # 初始化宏层参数
-        if weight_scale == 'kaiming':
-            
-            pass
-        else:
-            for i in range(self.num_layers - 1):
-                conv_W_key = f'W{i+1}'
-                conv_b_key = f'b{i+1}'
+        for i in range(self.num_layers - 1):
+            conv_W_key = f'W{i+1}'
+            conv_b_key = f'b{i+1}'
 
-                if i == 0:
-                    in_channels = input_dims[0]
-                else:
-                    in_channels = num_filters[i-1]
-                out_channels = num_filters[i]              
+            if i == 0:
+                in_channels = input_dims[0]
+            else:
+                in_channels = num_filters[i-1]
+            out_channels = num_filters[i]              
 
+            # kaiming初始化
+            if weight_scale == 'kaiming':
+                conv_W, conv_b = weight_initializer(in_channels, out_channels, filter_size, device=device, dtype=self.dtype)
+            else:
                 conv_W = weight_scale * torch.randn((out_channels, in_channels, filter_size, filter_size), device=device, dtype=self.dtype)
                 conv_b = torch.zeros(num_filters[i], device=device, dtype=self.dtype)
 
-                self.params[conv_W_key] = conv_W
-                self.params[conv_b_key] = conv_b
+            self.params[conv_W_key] = conv_W
+            self.params[conv_b_key] = conv_b
 
-                if batchnorm:
-                    gamma_key = f'gamma{i+1}'
-                    beta_key = f'beta{i+1}'
+            if batchnorm:
+                gamma_key = f'gamma{i+1}'
+                beta_key = f'beta{i+1}'
                     
-                    gamma = torch.ones(1, device=device, dtype=self.dtype)
-                    beta = torch.zeros(1, device=device, dtype=self.dtype)
+                gamma = torch.ones(1, device=device, dtype=self.dtype)
+                beta = torch.zeros(1, device=device, dtype=self.dtype)
 
-                    self.params[gamma_key] = gamma
-                    self.params[beta_key] = beta
+                self.params[gamma_key] = gamma
+                self.params[beta_key] = beta
 
-            # 初始化softmax层参数
-            H, W = input_dims[1], input_dims[2]
-            for i in range(self.num_layers - 1):
-                if i in self.max_pools:
-                    H = H // 2
-                    W = W // 2
+        # 初始化softmax层参数
+        H, W = input_dims[1], input_dims[2]
+        for i in range(self.num_layers - 1):
+            if i in self.max_pools:
+                H = H // 2
+                W = W // 2
 
-            in_features = num_filters[-1] * H * W
+        in_features = num_filters[-1] * H * W
             
-            lin_W_key = f'W{self.num_layers}'
-            lin_b_key = f'b{self.num_layers}'
+        lin_W_key = f'W{self.num_layers}'
+        lin_b_key = f'b{self.num_layers}'
 
+        if weight_scale == 'kaiming':
+            lin_W, lin_b = weight_initializer(in_features, num_classes, device=device, dtype=self.dtype)
+        else:
             lin_W = weight_scale * torch.randn((in_features, num_classes), device=device, dtype=self.dtype)
             lin_b = torch.zeros(num_classes, device=device, dtype=self.dtype)
 
-            self.params[lin_W_key] = lin_W
-            self.params[lin_b_key] = lin_b
+        self.params[lin_W_key] = lin_W
+        self.params[lin_b_key] = lin_b
         ################################################################
         #                      END OF YOUR CODE                        #
         ################################################################
@@ -830,7 +834,24 @@ def create_convolutional_solver_instance(data_dict, dtype, device):
     # CIFAR-10 within 60 seconds.                           #
     #########################################################
     # Replace "pass" statement with your code
-    pass
+    input_dims = data_dict['X_train'].shape[1:]
+
+    model = DeepConvNet(input_dims=input_dims, num_classes=10,
+                        num_filters=[32, 32, 64, 128],
+                        max_pools=[1, 2, 3],
+                        weight_scale='kaiming',
+                        reg=55e-5, 
+                        dtype=dtype,
+                        device=device
+                        )
+
+    solver = Solver(model, data_dict,
+                    num_epochs=15, batch_size=128,
+                    update_rule=adam,
+                    optim_config={
+                    'learning_rate': 44e-4,
+                    },
+                    print_every=20, device=device)
     #########################################################
     #                  END OF YOUR CODE                     #
     #########################################################
@@ -873,7 +894,7 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
         ###################################################################
         # Replace "pass" statement with your code
         fan_in = Din
-        W = torch.sqrt(gain / fan_in) * torch.randn((Din, Dout), device=device, dtype=dtype)
+        W = pow((gain / fan_in), 0.5) * torch.randn((Din, Dout), device=device, dtype=dtype)
         b = torch.zeros(Dout, device=device, dtype=dtype)
         weight = (W, b)
         ###################################################################
@@ -890,7 +911,7 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
         ###################################################################
         # Replace "pass" statement with your code
         fan_in = Din * K * K
-        W = torch.sqrt(gain / fan_in) * torch.randn((Dout, Din, K, K), device=device, dtype=dtype)
+        W = pow((gain / fan_in), 0.5) * torch.randn((Dout, Din, K, K), device=device, dtype=dtype)
         b = torch.zeros(Dout, device=device, dtype=dtype)
         weight = (W, b)
         ###################################################################
@@ -981,7 +1002,23 @@ class BatchNorm(object):
             # (https://arxiv.org/abs/1502.03167) might prove to be helpful.  #
             ##################################################################
             # Replace "pass" statement with your code
-            pass
+            out = torch.zeros((N, D), device=x.device, dtype=x.dtype)
+            m = x.shape[0]
+            
+            x_mean = x.mean(dim=0)
+            x_sub_mean = x - x_mean
+            x_var = (x_sub_mean ** 2).mean(dim=0)
+
+            x_std = torch.sqrt(x_var + eps)
+            x_std_inv = 1 / x_std
+
+            x_normalized = x_sub_mean * x_std_inv
+            out = gamma * x_normalized + beta
+
+            running_mean = momentum * running_mean + (1 - momentum) * x_mean
+            running_var = momentum * running_var + (1 - momentum) * (m / (m - 1)) * x_var
+
+            cache = (x_normalized, gamma, x_std_inv, m)
             ################################################################
             #                           END OF YOUR CODE                   #
             ################################################################
@@ -994,7 +1031,8 @@ class BatchNorm(object):
             # in the out variable.                                         #
             ################################################################
             # Replace "pass" statement with your code
-            pass
+            x_normalized = (x - running_mean) / torch.sqrt(running_var + eps)
+            out = gamma * x_normalized + beta
             ################################################################
             #                      END OF YOUR CODE                        #
             ################################################################
@@ -1036,7 +1074,23 @@ class BatchNorm(object):
         # Don't forget to implement train and test mode separately.         #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        x_normalized, gamma, std_inv, m = cache
+
+        dgamma = dout * x_normalized
+        dgamma = dgamma.sum(dim=0)
+
+        dbeta = dout.sum(dim=0)
+
+        dx_normalized = dout * gamma
+
+        dx_normalized_sum = dx_normalized.sum(dim=0, keepdim=True)
+        dx_normalized_sum = dx_normalized_sum.repeat(m, 1)
+
+        dx_normalized_multi_x = dx_normalized * x_normalized
+        dx_normalized_multi_x_sum = dx_normalized_multi_x.sum(dim=0, keepdim=True)
+        dx_normalized_multi_x_sum = dx_normalized_multi_x_sum.repeat(m, 1)
+
+        dx = (1 / m) * std_inv * ((m * dx_normalized) - dx_normalized_sum - dx_normalized * dx_normalized_multi_x_sum)
         #################################################################
         #                      END OF YOUR CODE                         #
         #################################################################
@@ -1069,7 +1123,23 @@ class BatchNorm(object):
         # single 80-character line.                                       #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        x_normalized, gamma, std_inv, m = cache
+
+        dgamma = dout * x_normalized
+        dgamma = dgamma.sum(dim=0)
+
+        dbeta = dout.sum(dim=0)
+
+        dx_normalized = dout * gamma
+
+        dx_normalized_sum = dx_normalized.sum(dim=0, keepdim=True)
+        dx_normalized_sum = dx_normalized_sum.repeat(m, 1)
+
+        dx_normalized_multi_x = dx_normalized * x_normalized
+        dx_normalized_multi_x_sum = dx_normalized_multi_x.sum(dim=0, keepdim=True)
+        dx_normalized_multi_x_sum = dx_normalized_multi_x_sum.repeat(m, 1)
+
+        dx = (1 /m) * std_inv * ((m * dx_normalized) - dx_normalized_sum - dx_normalized * dx_normalized_multi_x_sum)
         #################################################################
         #                        END OF YOUR CODE                       #
         #################################################################
@@ -1117,7 +1187,45 @@ class SpatialBatchNorm(object):
         # ours is less than five lines.                                #
         ################################################################
         # Replace "pass" statement with your code
-        pass
+        mode = bn_param['mode']
+        eps = bn_param.get('eps', 1e-5)
+        momentum = bn_param.get('momentum', 0.9)
+
+        N, C, H, W = x.shape
+        running_mean = bn_param.get('running_mean',
+                                    torch.zeros(C,
+                                                dtype=x.dtype,
+                                                device=x.device))
+        running_var = bn_param.get('running_var',
+                                   torch.zeros(C,
+                                               dtype=x.dtype,
+                                               device=x.device))
+        
+        # 训练情形
+        if mode == 'train':
+            out = torch.zeros((N, C, H, W), device=x.device, dtype=x.dtype)
+
+            x_mean = x.mean(dim=(0, 2, 3))
+            x_sub_mean = x - x_mean.reshape(1, C, 1, 1)
+            x_var = (x_sub_mean ** 2).mean(dim=(0, 2, 3))
+
+            x_std = torch.sqrt(x_var + eps)
+            x_std_inv = 1 / x_std
+
+            x_normalized = x_sub_mean * x_std_inv.reshape(1, C, 1, 1)
+            out = gamma.reshape(1, C, 1, 1) * x_normalized + beta.reshape(1, C, 1, 1)
+
+            running_mean = momentum * running_mean + (1 - momentum) * x_mean
+            running_var = momentum * running_var + (1 - momentum) * (N / (N - 1)) * x_var
+
+            cache = (x_normalized, gamma, x_std_inv)
+        # 测试情形
+        if mode == 'test':
+            x_normalized = (x - running_mean.reshape(1, C, 1, 1)) / torch.sqrt(running_var.reshape(1, C, 1, 1) + eps)
+            out = gamma.reshape(1, C, 1, 1) * x_normalized + beta.reshape(1, C, 1, 1)
+        
+        bn_param['running_mean'] = running_mean.detach()
+        bn_param['running_var'] = running_var.detach()
         ################################################################
         #                       END OF YOUR CODE                       #
         ################################################################
@@ -1148,7 +1256,25 @@ class SpatialBatchNorm(object):
         # ours is less than five lines.                                 #
         #################################################################
         # Replace "pass" statement with your code
-        pass
+        N, C, H, W = dout.shape
+        n = N * H * W
+
+        x_normalized, gamma, std_inv = cache
+
+        dgamma = dout * x_normalized
+        dgamma = dgamma.sum(dim=(0, 2, 3))
+
+        dbeta = dout.sum(dim=(0, 2, 3))
+
+        dx_normalized = dout * gamma.reshape(1, C, 1, 1)
+
+        dx_normalized_sum = dx_normalized.sum(dim=(0, 2, 3), keepdim=True)
+
+        dx_normalized_multi_x = dx_normalized * x_normalized
+        dx_normalized_multi_x_sum = dx_normalized_multi_x.sum(dim=(0, 2, 3), keepdim=True)
+        dx_normalized_multi_x_sum = dx_normalized_multi_x_sum.repeat(N, 1, H, W)
+
+        dx = (1 / n) * std_inv.reshape(1, C, 1, 1) * ((n * dx_normalized) - dx_normalized_sum - x_normalized * dx_normalized_multi_x_sum)
         ##################################################################
         #                       END OF YOUR CODE                         #
         ##################################################################
