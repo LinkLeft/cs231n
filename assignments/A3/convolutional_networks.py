@@ -558,8 +558,8 @@ class DeepConvNet(object):
                 gamma_key = f'gamma{i+1}'
                 beta_key = f'beta{i+1}'
                     
-                gamma = torch.ones(1, device=device, dtype=self.dtype)
-                beta = torch.zeros(1, device=device, dtype=self.dtype)
+                gamma = torch.ones(out_channels, device=device, dtype=self.dtype)
+                beta = torch.zeros(out_channels, device=device, dtype=self.dtype)
 
                 self.params[gamma_key] = gamma
                 self.params[beta_key] = beta
@@ -702,11 +702,11 @@ class DeepConvNet(object):
                 beta = self.params[f'beta{i+1}']
                 if i in self.max_pools:
                     out, cache = Conv_BatchNorm_ReLU_Pool.forward(
-                        input, W, b, gamma, beta, conv_param, bn_param, pool_param
+                        input, W, b, gamma, beta, conv_param, self.bn_params[i], pool_param
                     )
                 else:
                     out, cache = Conv_BatchNorm_ReLU.forward(
-                        input, W, b, gamma, beta, conv_param, bn_param
+                        input, W, b, gamma, beta, conv_param, self.bn_params[i]
                     )
             else:
                 if i in self.max_pools:
